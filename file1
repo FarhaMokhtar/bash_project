@@ -1,0 +1,344 @@
+#! /usr/bin/bash
+
+if [ -e /home/farha/Documents/iti/project2_pash ]
+then
+	cd /home/farha/Documents/iti/project2_pash
+	echo "DBMS is ready"
+
+else
+	mkdir /home/farha/Documents/iti/project2_pash
+	cd /home/farha/Documents/iti/project2_pash
+	echo "DBMS is ready"
+fi
+##########################################################################################################################
+
+function checkpattern(){
+    local db_name="$1"
+    case "$db_name" in
+        [a-zA-Z]*)
+            echo "Valid name."
+            return 0
+            ;;
+        *)
+            echo "Invalid name. It must begin with a letter and contain only letters, numbers, and underscores."
+            return 1
+            ;;
+    esac
+}
+###########################################################################################################################
+function metaDateFile(){
+  read -p "Please enter the number of columns to be created: " numCol
+  pk=0
+  separator=":"  
+  row=""
+  for ((i=0; i<$numCol; i++))
+  do
+    line=""
+    read -p "Please enter column name: " colName
+    line+=$colName
+    if [[ $i -eq $((numCol - 1)) ]]; then
+      row+="$colName"  
+    else
+      row+="$colName$separator" 
+    fi
+    read -p "Please enter column datatype (int/str): " colType
+    line+=:$colType
+    if [[ $pk -eq 0 ]]
+    then
+      read -p "Do you want to make this column a primary key (y/n): " checkPk
+      if [[ "$checkPk" == "y" || "$checkPk" == "yes" ]]
+      then
+        line+=:PK
+        pk=1
+      fi
+    fi
+       touch ".$1_metadata"
+
+      echo "$line" >> ".$1_metadata"
+  done  
+  echo -e "$row" >> $1
+}
+###################################################################################################
+function selectallrows() {
+    awk '
+    BEGIN {
+        FS=":"
+        print   "------------------------------------------------------------"
+    }
+    {
+        print $0
+    }
+    END{
+            print "------------------------------------------------------------"
+    }
+    ' "$1"
+}
+#########################################################################################################################
+function select_columns(){
+colNum=$(head -1 "$1" | tr ':' '\n' | grep -n -m 1 "$2" | cut -d: -f1)
+  awk 'BEGIN{FS=":"}{print $'$colNum'}' $1
+}
+#########################################################################################################################
+function DeletAll(){
+sed -i '/^[[:digit:]]/d' $1
+echo "the date in $1 deleted syccessfully"
+}
+#########################################################################################################################
+function DeletFromTable(){
+row=$(awk -v record="$2" -F':' '{if($1 == record) print $0}' "$1")
+echo $row
+if grep -Fxq "$row" "$1" 2>/dev/null;
+then 
+    sed -i "/$row/d" "$1"
+echo "Row deleted successfully!"
+fi
+}
+#########################################################################################################################
+function insert(){
+echo "Using metadata file: .$1_metadata"
+if ! [ -f "$1" ]
+then
+echo "this is table not exist table , please try again!"
+return
+fi
+declare -A pk_values
+numberofcolums=$(awk -F: 'END {print NR}' ".$1_metadata")
+rowsperator="\n"
+seperator=":"
+row=""
+for ((i=1 ; i <= $numberofcolums ; i++)); do
+name_column=$(cut -d: -f1 ".$1_metadata" | sed -n "${i}p")
+type_column=$(cut -d: -f2 ".$1_metadata" | sed -n "${i}p")
+key_column=$(cut -d: -f3 ".$1_metadata" | sed -n "${i}p")
+    read -p "please Enter $name_column with data type $type_column with $key_column : " DataEnter
+  
+#validate int datatype
+if [[ $type_column == "int" ]]; then
+while ! [[ $DataEnter =~ ^[0-9]+$ ]]; do
+echo "Invalid input. Please enter a valid integer." 
+read DataEnter
+done
+fi
+
+#validate str datatype
+if [[ $type_column == "str" ]]; then
+while ! [[ $DataEnter =~ ^[a-zA-Z]+$ ]]; do
+echo "Invalid input. Please enter a valid integer." 
+read DataEnter
+done
+fi
+#validate pk enter data 
+if [[ "$key_column" == "PK" ]]; then
+     while grep -q "$DataEnter" "$1"; do
+        echo "Error: $DataEnter already exists as a primary key. Please enter a unique value."
+        read -p "Please enter $name_column with data type $type_column and $key_column: " DataEnter
+    done
+fi
+
+
+#add data in table 
+ if [[ $i -eq $numberofcolums ]]; then
+
+        row+="$DataEnter$rowsperator"
+    else
+
+        row+="$DataEnter$seperator"
+    fi
+done
+echo -e "$row" >> "$1"
+if [[ $? -eq 0 ]]; then
+    echo "Data inserted successfully."
+else
+    echo "Error inserting data into table $1 ."
+fi
+row=""
+menutable
+}
+################################################################################################################################
+function update(){
+colNum=$(head -1 "$1" | tr ':' '\n' | grep -n -m 1 "$2" | cut -d: -f1)
+if [ $colNum == "" ]; then 
+echo "Not Found!"
+menutable
+else
+read -p "Enter pk number: " PKnum
+read -p "Enter column name to update it : " updatName
+udatecoul=$(head -1 "$1" | tr ':' '\n' | grep -n -m 1 "$updatName" | cut -d: -f1) 
+if [ $udatecoul == "" ];then
+echo "Not Found"
+menutable
+else
+read -p "Please now Enter new Data : " updateData
+if [[ $updateData =~ ^[0-9]+$ ]];then
+type="int"
+else
+type="str"
+fi
+type_column=$(cut -d: -f2 ".$1_metadata" | sed -n "${udatecoul}p")
+if [[ "$type_column" == "$type" ]]; then
+old=$(awk -F: -v col="$udatecoul" -v pk="$PKnum" '{if($1 == pk) print $col}' "$1")
+sed -i "/^$PKnum:/s/$old/$updateData/g" "$1"
+echo "Value updated successfully!"
+else
+echo "Invalid Data Type !"
+menutable
+fi
+fi
+fi
+}
+################################################################################################################################
+function menutable(){
+PS3="ENTER choice to work in tables # "
+select option in creatT ListTs dropT insert select delete update exit
+do
+case $option in 
+"creatT")
+read -p "Please Enter Table name: " TName
+if [ -e $TName ]
+then
+	echo "Table is already exist"
+else
+       if checkpattern "$TName"  ; then
+         echo "Valid Table name. Creating file..."
+         touch $TName
+	 echo "Table is created successfully"
+	 metaDateFile $TName
+       else
+        echo "Invalid Table name. File not created."
+       fi
+fi
+;;
+"ListTs")
+echo "Avaliable tables : "
+ls 
+;;
+"dropT")
+read -p "Please Enter Table name: " Tname
+if [ -e $Tname ]; then
+	 rm $Tname
+	if [ -e $Tname_metadata ]; then
+	     rm ".${Tname}_metadata"
+	     echo "Table deleted successfully ! "
+	    else 
+	    echo file not exist
+	fi
+	fi
+;;
+"insert")
+read -p "Enter which Table DO you insert in !" tName
+
+insert $tName
+;;
+"delete")
+   read -p "Enter table name you want to Delete from: " tname
+      if [[ -e $tname ]]; then
+       read -p "Do you want to Delet all data (type 'all') or specific record (type 'rec')? " c
+        if [ "$c" == "all" ]; then
+        DeletAll $tname
+        elif [ "$c" == "rec" ]; then
+           read -p "Enter pk num: " colname
+           DeletFromTable "$tname" "$colname"
+       else
+           echo "Invalid input. Please type 'all' or 'rec'."
+       fi
+   else
+       echo "Your table does not exist."
+   fi
+   menutable
+;;
+"select")
+   read -p "Enter table name you want to select from: " tname
+   if [[ -e $tname ]]; then
+       read -p "Do you want to select all columns (type 'all') or specific columns (type 'cols')? " c
+       
+       if [ "$c" == "all" ]; then
+           selectallrows "$tname"
+       elif [ "$c" == "cols" ]; then
+           echo "Available Columns:"
+           head -1 $tname
+           read -p "Enter column name: " colname
+           select_columns "$tname" "$colname"
+       else
+           echo "Invalid input. Please type 'all' or 'cols'."
+       fi
+   else
+       echo "Your table does not exist."
+   fi
+   menutable
+   ;;
+"update")
+read -p "Enter table name you want to update from: " tname
+if [[ -e $tname ]]; then 
+read -p "Enter pk name: " PK
+update $tname $PK
+else
+echo "Your table does not exist."
+fi
+menutable
+;;
+"exit")
+echo "Exiting!"
+break
+;;
+*)
+echo "Invalid option. Please try again."
+;;
+esac
+done
+}
+###############################################################################################################################
+PS3="ENTER VALUE# "
+select option in createDB listDBs connectDBS dropDB exit
+do
+case $option in 
+"createDB")
+read -p "Please Enter Database name: " dbName
+
+if [ -e $dbName ]
+then
+	echo "database is already exist"
+else
+       if checkpattern "$dbName"; then
+         echo "Valid database name. Creating directory..."
+         mkdir "$dbName"
+	 echo "Database is created successfully"
+       else
+        echo "Invalid database name. Directory not created."
+       fi
+fi
+;;
+"listDBs")
+   echo "Available Databases:"
+  ls /home/farha/Documents/iti/project2_pash
+;;
+"connectDBS")
+read -p "Please Enter Database name: " dbName
+if [ -e $dbName ]; then
+	cd $dbName
+	echo "succefully connect to your DataBase"
+	menutable 
+else
+	echo "your Database not exist"
+fi
+;;
+"dropDB")
+read -p "Please Enter Database name: " dbName
+if [ -e $dbName ]; then
+	rm -r $dbName
+	echo "Deleted your database succefully"
+else 
+	echo "your Database not exist"
+fi
+;;
+"exit")
+echo "Exiting!"
+break
+;;
+*)
+echo "Invalid option. Please try again."
+;;
+esac
+done
+#################################################################################################################################
+
+
